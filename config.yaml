@@ -1,0 +1,80 @@
+# Blue -- Blue-chip Legacy Upgrade Engine: configuration
+# Every threshold the pipeline uses lives here, so nothing is hidden in code.
+# Thresholds marked "illustrative" are NOT bank policy: set them with your model risk owner.
+
+paths:
+  legacy_dir: legacy_models
+  data_csv: data/credit_default.csv
+  splits_dir: data/splits
+  fixtures_dir: fixtures
+  artifacts_dir: artifacts
+  cache_dir: llm_cache
+
+data:
+  seed: 42
+  test_size: 0.30
+  target: default
+  protected: [SEX, AGE]        # tested for fairness; NOT used as predictors by the legacy model
+  age_bands: [30, 45]          # bands: <30, 30-44, 45+
+
+llm:
+  mode: offline                # offline | replay | live   (override with --mode)
+  provider: anthropic          # anthropic | openai  (live mode only)
+  model: ""                    # or set BLUE_LLM_MODEL
+  temperature: 0
+  max_tokens: 4000
+
+tiering:
+  # Materiality is a BUSINESS input (exposure, customer impact). It cannot be inferred from code,
+  # so it is supplied here and recorded as an assumption in the inventory.
+  materiality:
+    credit_pd: high
+    fraud_gbm: medium
+    pricing_glm: low
+  complexity_weights:
+    "logistic regression": 1
+    "linear regression": 1
+    "poisson regression": 1
+    "gradient boosting": 3
+    "random forest": 3
+  many_predictors: 15
+  long_code_loc: 150
+
+redevelop:
+  models: [credit_pd]          # models that go through the Python redevelopment + parity stage
+
+parity:
+  max_iterations: 5
+  timeout_seconds: 180
+  tolerances:
+    # R's glm stops when the deviance change is < 1e-8, so legacy coefficients/predictions are only converged to
+    # about 1e-7. Measured gap for the correct port: coefficients ~1e-7, predictions ~5e-7. Tolerances sit ~20x above.
+    coefficient_max_abs_diff: 1.0e-5
+    prediction_max_abs_diff: 1.0e-5
+    metric_abs_diff: 1.0e-5          # AUC / Gini / KS agreement with the legacy outputs
+    decision_agreement_min: 1.0      # share of identical approve/decline decisions
+
+validation:                          # illustrative thresholds
+  bootstrap_samples: 200
+  calibration_bins: 10
+  gini:            {green_min: 0.40, amber_min: 0.30}
+  calibration_gap: {green_max: 0.010, amber_max: 0.020}   # |mean predicted PD - observed default rate|
+  decile_gap:      {green_max: 0.03, amber_max: 0.06}     # worst calibration decile
+  psi:             {green_max: 0.10, amber_max: 0.25}
+  csi:             {green_max: 0.10, amber_max: 0.25}
+  approval_ratio:  {green_min: 0.80, amber_min: 0.70}     # four-fifths style indicator, NOT a legal test
+  equalized_odds_gap: {green_max: 0.05, amber_max: 0.10}
+  challenger_auc_gain: {green_max: 0.01, amber_max: 0.03} # challenger beating champion => review model form
+
+monitor:
+  batches: 6
+  batch_size: 1500
+  severities: [0.0, 0.0, 0.15, 0.35, 0.60, 1.0]   # synthetic stress scenario, labels not simulated
+  psi_watch: 0.10
+  psi_revalidate: 0.25
+  decline_rate_shift_watch: 0.03
+  decline_rate_shift_revalidate: 0.07
+
+report:
+  team: "Blue"
+  title: "Independent validation report (draft, automated)"
