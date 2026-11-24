@@ -4,7 +4,7 @@ from blue import docgen
 from blue.config import resolve
 from blue.inventory import scan
 from blue.redevelop import check_code
-from blue.report import numeric_leaves, ungrounded_numbers
+from blue.report import numeric_leaves, strip_ci_level, ungrounded_numbers
 
 
 def test_grounding_accepts_computed_numbers_and_rejects_invented_ones():
@@ -14,6 +14,20 @@ def test_grounding_accepts_computed_numbers_and_rejects_invented_ones():
     assert ungrounded_numbers(ok, allowed) == []
     planted = "The Gini is 0.512 on 7,200 accounts."
     assert ungrounded_numbers(planted, allowed) == ["0.512"]
+
+
+def test_grounding_allows_the_fixed_95_percent_interval_level_only_next_to_interval_wording():
+    allowed = numeric_leaves({"gini": 0.437, "lo": 0.403, "hi": 0.469, "n": 7200})
+    for ok in (
+        "Gini is 0.437 (95% CI 0.403 to 0.469).",
+        "Gini is 0.437, with a 95% confidence interval of 0.403 to 0.469.",
+        "Gini is 0.437 (95 % bootstrap intervals 0.403 to 0.469).",
+    ):
+        assert ungrounded_numbers(strip_ci_level(ok), allowed) == [], ok
+    # A 95 used any other way is still an ungrounded number, and invented numbers beside it are still caught.
+    assert ungrounded_numbers(strip_ci_level("About 95% of the 7,200 accounts were approved."), allowed) == ["95%"]
+    assert ungrounded_numbers(strip_ci_level("There were 95 accounts."), allowed) == ["95"]
+    assert ungrounded_numbers(strip_ci_level("Gini is 0.512 (95% CI 0.403 to 0.469)."), allowed) == ["0.512"]
 
 
 def test_grounding_ignores_booleans_and_nan():
