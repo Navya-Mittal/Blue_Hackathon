@@ -20,6 +20,16 @@ from .llm import LLMClient  # noqa: E402
 
 NUM_RE = re.compile(r"(?<![\w.])[-+]?\d[\d,]*(?:\.\d+)?%?")
 
+# "95%" is the confidence level of the bootstrap intervals (metrics.bootstrap_ci uses alpha = 0.05), a fixed setting of the
+# pipeline and not a computed result. The findings text the LLM is given says "95% CI", so it may repeat that. Only the
+# level written next to interval wording is exempt: "95% of accounts" or "95 accounts" is still checked like any number.
+CI_LEVEL_RE = re.compile(r"\b95(?:\.0)?\s*%?[\s-]*(?=(?:confidence|CI|intervals?|credible|bootstrap)\b)", re.I)
+
+
+def strip_ci_level(text: str) -> str:
+    """Remove the fixed 95% interval level (when written as '95% CI', '95% confidence interval', ...) before checking."""
+    return CI_LEVEL_RE.sub("", text)
+
 
 # ------------------------------------------------------------------ numeric grounding
 def numeric_leaves(obj: Any) -> list[float]:
@@ -119,7 +129,7 @@ def make_narrative(
         "report_narrative", NARRATIVE_SYSTEM, payload, offline=lambda: "\n\n".join(tmpl)
     )
     paras = [x.strip() for x in res.text.split("\n\n") if x.strip()]
-    bad = ungrounded_numbers(" ".join(paras), allowed)
+    bad = ungrounded_numbers(strip_ci_level(" ".join(paras)), allowed)
     if bad:
         audit.event("narrative_rejected", source=res.source, ungrounded=bad)
         return (
